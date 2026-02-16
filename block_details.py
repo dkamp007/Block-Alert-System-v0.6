@@ -319,7 +319,7 @@ def render_performance_corridor(df, metric):
     df['upper'] = df['mean'] + (1.5 * df['std'])
     df['lower'] = df['mean'] - (1.5 * df['std'])
 
-    st.markdown("##### 🛡️ System KPI Corridor")
+    st.markdown("##### 🛡️ System KPI")
     st.caption("The shaded area represents the 'Normal' performance range based on a 7-day rolling window")
 
     fig = go.Figure()
@@ -354,7 +354,7 @@ def render_performance_corridor(df, metric):
     fig.add_trace(go.Scatter(
         x=df['Date'], y=df[metric],# y=df['Earnings'],
         line=dict(color='#2563eb', width=3),
-        name=f'Actual {metric}',
+        name=f'{metric}',
         mode='lines+markers'
     ))
 
@@ -380,6 +380,81 @@ def render_performance_corridor(df, metric):
 
 
 
+
+
+
+# def render_impact_scatter(df, metric_type="Earnings"):
+#     """
+#     Renders a Quadrant-based Scatter Plot focusing on Partner Growth.
+#     X-axis: Volume (Impressions) Change % vs 7D Avg
+#     Y-axis: Earnings Change % vs 7D Avg
+#     Size: Current Total Earnings
+#     """
+#     # 1. Aggregate to Partner Level (Crucial for Executive View)
+#     # This prevents the 'vertical line' effect by summing all blocks per partner
+#     partner_df = df.groupby("Partner").agg({
+#         "Earnings": "sum",
+#         "7D Avg Earnings": "sum",
+#         "Impressions": "sum",
+#         "7D Avg Impressions": "sum",
+#         "alert_bucket": lambda x: 'red' if 'red' in x.values else ('green' if 'green' in x.values else 'no impact')
+#     }).reset_index()
+
+#     # 2. CALCULATE VARIANCES
+#     # X-Axis: Volume Change %
+#     partner_df["Vol_Change_Pct"] = ((partner_df["Impressions"] / partner_df["7D Avg Impressions"]) - 1) * 100
+    
+#     # Y-Axis: Earnings Change %
+#     partner_df["Rev_Change_Pct"] = ((partner_df["Earnings"] / partner_df["7D Avg Earnings"]) - 1) * 100
+
+#     # Filter out rows with no significant movement to keep the chart clean
+#     plot_df = partner_df[partner_df['alert_bucket'] != 'no impact'].copy()
+    
+#     if plot_df.empty:
+#         st.info("No significant partner movements to display in the Impact Map.")
+#         return
+
+#     st.markdown("##### 🎯 Partner Growth & Impact Map")
+#     st.caption("X: Volume Change % | Y: Earnings Change % | Size: Total Earnings")
+
+#     # 3. RENDER PLOT
+#     fig = px.scatter(
+#         plot_df,
+#         x="Vol_Change_Pct",
+#         y="Rev_Change_Pct",
+#         size="Earnings",
+#         color="alert_bucket",
+#         hover_name="Partner",
+#         color_discrete_map={'red': '#ef4444', 'green': '#10b981'},
+#         custom_data=["Earnings", "Vol_Change_Pct", "Rev_Change_Pct"]
+#     )
+
+#     # 3.5 Add Quadrant Lines
+#     fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1.5, opacity=0.6)
+#     fig.add_vline(x=0, line_dash="dash", line_color="#94a3b8", line_width=1.5, opacity=0.6)
+
+#     # 4. Refine Tooltips
+#     fig.update_traces(
+#         hovertemplate="<br>".join([
+#             "<b>%{hovertext}</b>",
+#             "Current Earnings: $%{customdata[0]:,.2f}",
+#             "Volume Shift: %{customdata[1]:.1f}%",
+#             "Revenue Shift: %{customdata[2]:.1f}%"
+#         ])
+#     )
+
+#     fig.update_layout(
+#         height=300, # Increased height for better visibility
+#         template="plotly_white",
+#         xaxis=dict(title="Volume Change % (Traffic)", zeroline=False),
+#         yaxis=dict(title="Earnings Change % (Revenue)", zeroline=False),
+#         showlegend=False,
+#         margin=dict(l=10, r=10, t=30, b=10)
+#     )
+
+#     st.plotly_chart(fig, width='stretch')
+
+
 def render_impact_scatter(df):
 
     # 1. Filter for the latest date in the dataset to avoid over-plotting history
@@ -388,6 +463,8 @@ def render_impact_scatter(df):
     current_df = df[df['Date'] == latest_date].copy()
 
     plot_df = current_df[~current_df['Alerts'].isin(['➡️ Stable', '✅ Healthy Growth'])].copy()
+
+    plot_df = plot_df[plot_df['Earnings'] > 50]
     
     if plot_df.empty:
         st.info("No significant partner movements to display in the Impact Map.")
@@ -413,12 +490,12 @@ def render_impact_scatter(df):
     fig = px.scatter(
         plot_df,
         x="Impr vs 7D",
-        y="Rev vs 7D",
+        y="Clicks vs 7D",
         size="Earnings",
         color="Alerts",
         hover_name="Partner",
         color_discrete_map=color_map,
-        custom_data=["Earnings", "Impr vs 7D", "Rev vs 7D", "CTR"]
+        custom_data=["Earnings", "Impr vs 7D", "Rev vs 7D", "Clicks vs 7D"]
     )
 
     # 4. Add Crosshairs at Zero
@@ -426,140 +503,33 @@ def render_impact_scatter(df):
     fig.add_vline(x=0, line_dash="dot", line_color="#cbd5e1", line_width=2)
 
     # 5. Add Quadrant Action Labels
-    # fig.add_annotation(x=current_df["Impr vs 7D"].max(), y=current_df["Rev_Change_Pct"].max(), 
-    #                    text="SCALE", showarrow=False, opacity=0.5, font=dict(size=12))
-    # fig.add_annotation(x=current_df["Impr vs 7D"].max(), y=current_df["Rev_Change_Pct"].min(), 
-    #                    text="INVESTIGATE", showarrow=False, opacity=0.5, font=dict(size=12))
+    # fig.add_annotation(x=current_df["Impr vs 7D"].max(), y=current_df["Clicks vs 7D"].max(), 
+    #                    text="SCALE", showarrow=False, opacity=0.8, font=dict(size=12))
+    # fig.add_annotation(x=current_df["Impr vs 7D"].max(), y=current_df["Clicks vs 7D"].min(), 
+    #                    text="INVESTIGATE", showarrow=False, opacity=0.8, font=dict(size=12))
 
     # 6. Refine Tooltips
     fig.update_traces(
         hovertemplate="<br>".join([
             "<b>%{hovertext}</b>",
             "Earnings: $%{customdata[0]:,.2f}",
-            "CTR: %{customdata[3]:.2f}%",
-            "Volume Shift: %{customdata[1]:.1f}%",
-            "Revenue Shift: %{customdata[2]:.1f}%"
+            "Volume Shift: %{customdata[1]:.2f}%",
+            "Revenue Shift: %{customdata[2]:.2f}%",
+            "Clicks Shift: %{customdata[3]:.2f}%"
         ])
     )
 
     fig.update_layout(
         height=300,
         template="plotly_white",
-        xaxis=dict(title="Volume Change % (Traffic)", zeroline=False, ticksuffix="%"),
-        yaxis=dict(title="Revenue Change % (Value)", zeroline=False, ticksuffix="%"),
+        xaxis=dict(title="Volume Change %", zeroline=False, ticksuffix="%"),
+        yaxis=dict(title="Clicks Change %", zeroline=False, ticksuffix="%"),
         showlegend=False,
         #legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=10, r=10, t=30, b=10)
     )    
 
     st.plotly_chart(fig, width='stretch')
-
-
-
-
-
-
-# def render_impact_scatter(df, metric_type="EPC"):
-#     """
-#     Renders a Quadrant-based Scatter Plot to identify high-priority partners.
-#     X-axis: Volume Change %
-#     Y-axis: Efficiency (EPC/EPI) Change %
-#     Size: Current Earnings
-#     """
-#     # Map the dynamic metric
-#     y_col = f"{metric_type} vs 7D"
-    
-#     # Filter out 'no impact' to keep the chart focused on movers
-#     plot_df = df[df['alert_bucket'] != 'no impact'].copy()
-    
-#     if plot_df.empty:
-#         st.info("No significant partner movements to display in the Impact Map.")
-#         return
-
-#     # 2. CALCULATE VARIANCES (Fixes the ValueError)
-#     # Volume Change %
-#     avg_impr_col = "7D Avg Impressions" if "7D Avg Impressions" in plot_df.columns else "Impressions" # Fallback
-
-#     plot_df["Impr vs 7D"] = ((plot_df["Impressions"] / plot_df[avg_impr_col]) - 1) * 100
-    
-#     # Efficiency Change % (Y-Axis)
-#     y_val_col = metric_type
-#     y_avg_col = f"7D Avg {metric_type}"
-#     y_col_name = f"{metric_type} vs 7D"
-    
-#     plot_df[y_col_name] = ((plot_df[y_val_col] / plot_df[y_avg_col]) - 1) * 100
-
-#     st.markdown("##### 🎯 Partner Impact Map")
-#     st.caption("Identifies the biggest movers in the system. **Red** bubbles represent alerts requiring immediate investigation")
-
-#     # 3. RENDER PLOT
-#     fig = px.scatter(
-#         plot_df,
-#         x="Impr vs 7D",
-#         y=y_col_name,
-#         size="Earnings",
-#         color="alert_bucket",
-#         hover_name="Partner" if "Partner" in plot_df.columns else "Block Name",
-#         color_discrete_map={'red': '#ef4444', 'green': '#10b981'},
-#         custom_data=["Earnings", "Impr vs 7D", y_col_name]
-#         #title=f"Partner Velocity: Volume vs. {metric_type}"
-#     )
-
-
-#     # 3.5 Add Quadrant Lines (The Crosshair)
-#     fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1.5, opacity=0.8)
-#     fig.add_vline(x=0, line_dash="dash", line_color="#94a3b8", line_width=1.5, opacity=0.8)
-
-#     # Optional: Add Quadrant Annotations (To help Executives read it instantly)
-#     # These labels sit in the corners of the quadrants
-#     # fig.add_annotation(x=95, y=95, text="SCALE 🚀", showarrow=False, xref="paper", yref="paper", font=dict(size=10, color="#10b981"))
-#     # fig.add_annotation(x=5, y=5, text="CRISIS 🚨", showarrow=False, xref="paper", yref="paper", font=dict(size=10, color="#ef4444"))
-
-#     # 4. Refine Tooltips
-#     fig.update_traces(
-#         hovertemplate="<br>".join([
-#             "<b>%{hovertext}</b>",
-#             "Earnings: $%{customdata[0]:,.2f}",
-#             "Vol Change: %{customdata[1]:.1f}%",
-#             "Eff Change: %{customdata[2]:.1f}%"
-#         ])
-#     )
-
-#     fig.update_layout(
-#         height=300,
-#         template="plotly_white",
-#         xaxis=dict(title="Volume Change %", zeroline=False, autorange=True), # Hide default zeroline to use our custom dashed one
-#         yaxis=dict(title=f"{metric_type} Change %", zeroline=False, autorange=True),
-#         showlegend=False,
-#         margin=dict(l=10, r=10, t=30, b=10)
-#     )
-
-#     st.plotly_chart(fig, width='stretch')
-
-    
-#     # # ... (Keep your existing Quadrant Lines and Annotations logic here) ...
-
-#     # # 4. Refine Tooltips
-#     # fig.update_traces(
-#     #     hovertemplate="<br>".join([
-#     #         "<b>%{hovertext}</b>",
-#     #         "Earnings: $%{customdata[0]:,.2f}",
-#     #         "Vol Change: %{customdata[1]:.1f}%",
-#     #         "Eff Change: %{customdata[2]:.1f}%"
-#     #     ])
-#     # )
-
-#     # fig.update_layout(
-#     #     height=300,
-#     #     template="plotly_white",
-#     #     xaxis=dict(title="Volume Change (vs 7D) %"),
-#     #     yaxis=dict(title=f"{metric_type} Change (vs 7D) %"),
-#     #     showlegend=False
-#     # )
-
-#     # st.plotly_chart(fig, width='stretch')
-
-
 
 
     
