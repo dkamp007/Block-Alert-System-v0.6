@@ -35,7 +35,8 @@ SMTP_HOST = "mail.dinerosoftware.com"
 SMTP_PORT = 25
 USERNAME = "smtpcheck@dinerosoftware.com"
 PASSWORD = "SMTP801l0g1n"
-RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
+#RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
+RECEIVER_EMAILS = ['paul.debkamal57@gmail.com']# 'debkamal.paul@dinerosoftware.com']
 
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -808,7 +809,7 @@ def get_alerts():
     partner_df = fetch_volume_spike_tracker(alert_date)
     
     # -----------------------------
-    # 1. Filter RED & GREEN alerts
+    # 1. Filter only RED alerts
     # -----------------------------
     
     red_epc = epc_df[epc_df['alert_bucket'] == 'red'].copy() if not epc_df.empty else pd.DataFrame()
@@ -851,9 +852,8 @@ def get_alerts():
 
 
     # -----------------------------
-    # 4. Select COMMON & REQUIRED columns only
+    # 4. Select COMMON columns only
     # -----------------------------
-    
     common_cols = [
         'Block ID',
         'Partner',
