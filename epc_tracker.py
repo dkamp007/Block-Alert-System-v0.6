@@ -112,14 +112,16 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
             row_number() over (partition by r.keyword_block_id order by r.eventDate)
             - row_number() over (partition by r.keyword_block_id, (r.epc > r.prev_epc) order by r.eventDate)
             else null end as grp_daily_rise,
-           
-            ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id ORDER BY r.eventDate)
-              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epc < r.epc_7d_avg * 0.8) ORDER BY r.eventDate) AS 
-              grp_low,
 
+            case when r.epc < r.epc_7d_avg * 0.8 then
             ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id ORDER BY r.eventDate)
-              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epc > r.epc_7d_avg * 1.15) ORDER BY r.eventDate) AS 
-              grp_high,
+              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epc < r.epc_7d_avg * 0.8) ORDER BY r.eventDate)
+            else null end AS grp_low,
+
+            case when r.epc > r.epc_7d_avg * 1.15 then
+            ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id ORDER BY r.eventDate)
+              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epc > r.epc_7d_avg * 1.15) ORDER BY r.eventDate) 
+              else null end AS grp_high,
 
             -- Volume-led EPC stagnation
             CASE 
@@ -149,15 +151,29 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
                         ELSE 0 
             END AS is_current_drop_streak_end,
         
-        CASE 
-            WHEN f.mild_epc_rise_flag = 1 
-                THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_daily_rise ORDER BY f.eventDate DESC) = 1 
-                    ELSE 0 
-        END AS is_current_rise_streak_end,
+            CASE 
+                WHEN f.mild_epc_rise_flag = 1 
+                    THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_daily_rise ORDER BY f.eventDate DESC) = 1 
+                        ELSE 0 
+            END AS is_current_rise_streak_end,
 
-        ROUND(((f.epc - f.epc_7d_avg) / NULLIF(f.epc_7d_avg, 0)) * 100, 1) AS epc_perf_pct,
+            CASE 
+                WHEN f.low_epc_flag = 1 
+                    THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_low ORDER BY f.eventDate DESC) = 1 
+                    ELSE 0 
+            END AS is_current_low_streak_end,            
+            
+            CASE 
+                WHEN f.high_epc_flag = 1 
+                    THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_high ORDER BY f.eventDate DESC) = 1 
+                    ELSE 0 
+            END AS is_current_high_streak_end,
         
-        ROUND(((f.est_earnings - f.earn_7d_avg) / NULLIF(f.earn_7d_avg, 0)) * 100, 1) AS rev_perf_pct
+        
+
+        ROUND(((f.epc - f.epc_7d_avg) / NULLIF(f.epc_7d_avg, 0)) * 100, 2) AS epc_perf_pct,
+        
+        ROUND(((f.est_earnings - f.earn_7d_avg) / NULLIF(f.earn_7d_avg, 0)) * 100, 2) AS rev_perf_pct
             
         FROM flagged f
     ),
@@ -192,24 +208,30 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
             round(s.epc_30d_avg, 4) as `30D Avg EPC`,
             
             round(g.daily_rev_share * 100, 2) as `Block's Daily Share`,
+
+            round(impr_7d_avg, 2) as `7D Avg Impressions`,
             
 
 
             CASE
                 -- 1) CRITICAL RED (streak / sharp drops)
-                WHEN s.low_streak_len >= 3 AND g.daily_rev_share > 0.015 THEN '🔥 3D EPC Decline on High Revenue Block'
-                WHEN s.low_streak_len >= 3 THEN '⚠️ 3D EPC Decline Streak'
-                WHEN s.sharp_drop_flag = 1 AND g.daily_rev_share > 0.015 THEN '🚨 Sharp EPC Drop on High Revenue Block'
-                WHEN s.sharp_drop_flag = 1 THEN 
-                CONCAT('⚠️ Sharp EPC Drop From Yesterday by ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '%')
+                WHEN s.low_streak_len >= 3 AND g.daily_rev_share > 0.015 AND s.is_current_low_streak_end = 1 THEN CONCAT('🔥 EPC ↓ ', s.low_streak_len, 'D Streak | ', s.epc_perf_pct, '% vs 7D Avg | High Rev Block')                
+                
+                WHEN s.low_streak_len >= 3 AND s.is_current_low_streak_end = 1 THEN CONCAT('⚠️ EPC ↓ ', s.low_streak_len, 'D Streak | ', s.epc_perf_pct, '% vs 7D Avg')               
+                WHEN s.sharp_drop_flag = 1 AND g.daily_rev_share > 0.015 THEN CONCAT('🚨 Sharp EPC ↓ ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '% vs Yesterday | High Rev Block')
+                
+                WHEN s.sharp_drop_flag = 1 THEN CONCAT('🚨 Sharp EPC ↓ ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '% vs Yesterday')
 
+                
                 -- 2) CRITICAL GREEN (streak / sharp rises)
-                WHEN s.high_streak_len >= 3 AND g.daily_rev_share > 0.015 THEN '✅ 3D EPC Rise on High Revenue Block'
-                WHEN s.high_streak_len >= 3 THEN '📈 3D EPC Rise Streak'
-                WHEN s.sharp_rise_flag = 1 AND g.daily_rev_share > 0.015 THEN '🏆 Sharp EPC Rise on High Revenue Block'
-                WHEN s.sharp_rise_flag = 1 then 
-                CONCAT('✨ Sharp EPC Rise From Yesterday by ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '%')
+                WHEN s.high_streak_len >= 3 AND g.daily_rev_share > 0.015 AND s.is_current_high_streak_end = 1 THEN CONCAT('🔥 EPC ↑ ', s.high_streak_len, 'D Streak | ', s.epc_perf_pct, '% vs 7D Avg | High Rev Block')
+                
+                WHEN s.high_streak_len >= 3 AND s.is_current_high_streak_end = 1 THEN CONCAT('📈 EPC ↑ ', s.low_streak_len, 'D Streak | ', s.epc_perf_pct, '% vs 7D Avg')                
+                WHEN s.sharp_rise_flag = 1 AND g.daily_rev_share > 0.015 THEN CONCAT('🏆 Sharp EPC ↑ ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '% vs Yesterday | High Rev Block')
+                
+                WHEN s.sharp_rise_flag = 1 then CONCAT('✨ Sharp EPC ↑ ', ROUND(((s.epc - s.prev_epc) / NULLIF(s.prev_epc, 0)) * 100, 2), '% vs Yesterday')
 
+                
                 -- 3) DAILY MOVERS
 
                 WHEN s.mild_drift_streak_len >= 4 AND s.is_current_drop_streak_end = 1 
@@ -218,24 +240,26 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
                 WHEN s.mild_rise_streak_len >= 4 AND s.is_current_rise_streak_end = 1 
                     THEN concat('🏆 EPC Rising Daily For ', s.mild_rise_streak_len, ' Days')
 
+                
                 -- 4) SINGLE-DAY diagnostics
-                WHEN s.low_epc_low_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '❌ Both EPC & Rev Low on High Revenue Block'
+                WHEN s.low_epc_low_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '❌ Both EPC & Rev Low | High Rev Block'
                 WHEN s.low_epc_high_rev_flag = 1 THEN CONCAT('⚠️ EPC: ', s.epc_perf_pct, '% | Rev: ', s.rev_perf_pct, '%')
                 
 
-                WHEN s.high_epc_high_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '✅ EPC & Revenue Both High on High Revenue Block'
+                WHEN s.high_epc_high_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '✅ EPC & Revenue Both High | High Rev Block'
                 WHEN s.high_epc_low_rev_flag = 1 THEN CONCAT('✨ EPC: ', s.epc_perf_pct, '% | Rev: ', s.rev_perf_pct, '%')
                 WHEN s.high_epc_high_rev_flag = 1 THEN '✅ EPC & Revenue Both Higher Than 7D Avg'
 
+                
                 WHEN s.low_epc_flag = 1 AND g.daily_rev_share > 0.015 THEN '🔎 Low EPC - High Revenue Block'
                 WHEN s.high_epc_flag = 1 AND g.daily_rev_share > 0.015 THEN '🔎 High EPC - High Revenue Block'
                 
-                WHEN s.low_epc_flag = 1 then CONCAT('⚠️ EPC DOWN (', ROUND(((s.epc - s.epc_7d_avg) / NULLIF(s.epc_7d_avg, 0)) * 100, 2), '%)')
-                
-                
-                WHEN s.high_epc_flag = 1 THEN CONCAT('📈 EPC UP (', ROUND(((s.epc - s.epc_7d_avg) / NULLIF(s.epc_7d_avg, 0)) * 100, 2), '%)')
 
-                -- 🟡 SCALE QUALITY WATCH
+                WHEN s.low_epc_flag = 1 THEN CONCAT('⚠️ EPC DOWN | ', s.epc_perf_pct, '% vs 7D Avg')
+                WHEN s.high_epc_flag = 1 THEN CONCAT('📈 EPC UP | ', s.epc_perf_pct, '% vs 7D Avg')
+
+                
+                -- 5) SCALE QUALITY WATCH
             	WHEN s.volume_epc_stagnation_flag = 1 AND g.daily_rev_share > 0.01 THEN '📈 Traffic & Revenue Spike with Stable EPC on High Revenue Block'
                 WHEN s.volume_epc_stagnation_flag = 1 THEN '📈 Traffic & Revenue Spike with Stable EPC'
 
@@ -257,7 +281,7 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
     )
 
     SELECT 
-        Date, `Block ID`,
+        Date, Alerts, `Block ID`,
     	Partner,
     	`Block Name`,
     	Earnings,
@@ -267,9 +291,12 @@ def fetch_epc_tracker(partners=None, block_ids=None, block_names=None):
     	EPC, 
         `7D Avg EPC`, `30D Avg EPC`, `Block's Daily Share`,
 
+        `7D Avg Impressions`,
+
         is_high_revenue_block,
         
-        Alerts,
+        
+
 
         CASE
                 when `Alerts` = 'Within Thresholds' then 'no impact'
