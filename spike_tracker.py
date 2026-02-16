@@ -93,14 +93,6 @@ def fetch_volume_spike_tracker(partners=None):
     SELECT
         eventDate AS Date, partner as Partner,
 
-        ROUND(est_earnings, 2) AS Earnings, live_categories as `Live Categories`,
-        
-        uniq_impr AS Impressions,
-        
-        paid_clicks AS Clicks,
-        
-        ROUND(ctr * 100, 2) AS CTR,
-
         #round(avg_impr_7d, 2) as Impr_7D, round(avg_clicks_7d, 2) as Clicks_7D, round(avg_rev_7d, 2) as Rev_7D, round(avg_ctr_7d * 100, 2) as CTR_7D,
 
         CASE
@@ -120,6 +112,14 @@ def fetch_volume_spike_tracker(partners=None):
                 ELSE '➡️ Stable'
 
         END AS Alerts,
+
+        ROUND(est_earnings, 2) AS Earnings, live_categories as `Live Categories`,
+        
+        uniq_impr AS Impressions,
+        
+        paid_clicks AS Clicks,
+        
+        ROUND(ctr * 100, 2) AS CTR,
 
         ROUND(click_pct * 100, 2) AS `Clicks vs 7D`,
         ROUND(impr_pct * 100, 2) AS `Impr vs 7D`,
@@ -223,13 +223,7 @@ def fetch_category_spike_tracker(block_names=None, block_ids=None):
     
     SELECT
         eventDate AS Date, 
-        keyword_block_id as `Block ID`, partner as Partner,
-        block_name as `Block Name`, 
-        ROUND(est_earnings, 2) AS Earnings, 
-        uniq_impr AS Impressions, 
-        paid_clicks AS Clicks,
-        
-        ROUND(ctr, 2) AS CTR,
+        keyword_block_id as `Block ID`, 
 
         CASE
             -- Tier 1: Healthy
@@ -248,6 +242,14 @@ def fetch_category_spike_tracker(block_names=None, block_ids=None):
                 ELSE '➡️ Stable'
 
         END AS Alerts,
+
+        partner as Partner,
+        block_name as `Block Name`, 
+        ROUND(est_earnings, 2) AS Earnings, 
+        uniq_impr AS Impressions, 
+        paid_clicks AS Clicks,
+        
+        ROUND(ctr, 2) AS CTR,
 
         ROUND(click_pct * 100, 2) AS `Clicks vs 7D`,
         ROUND(impr_pct * 100, 2) AS `Impr vs 7D`,
