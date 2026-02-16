@@ -41,7 +41,46 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
 
     where_clause = " AND ".join(conditions)
 
-    
+    # Optional: reuse partner filter inside partner share CTE for speed (only when partners selected)
+    # partner_filter_sql = ""
+    # if partners:
+    #     partner_list = "', '".join(partners)
+    #     partner_filter_sql = f"AND partner IN ('{partner_list}')"
+
+    # --------------------------------------------------
+    # 3. CONDITIONAL PARTNER REVENUE SHARE
+    # --------------------------------------------------
+    # partner_share_cte = ""
+    # partner_share_join = ""
+    # partner_share_select = ""
+
+    # if partners_selected:
+    #     partner_share_cte = f"""
+    #     , partner_block_revenue_share AS (
+    #         SELECT
+    #             partner,
+    #             keyword_block_id,
+    #             SUM(est_earnings) AS partner_45d_earnings,
+    #             SUM(est_earnings) * 1.0
+    #               / NULLIF(SUM(SUM(est_earnings)) OVER (PARTITION BY partner), 0) AS partner_revenue_share
+    #         FROM team_block_stats
+    #         WHERE eventDate between '{start_date}' and '{end_date}'
+    #           AND est_earnings > 0
+    #           AND partner NOT IN ('DIN', 'TWS', 'XYZ', 'XXX')
+    #           {partner_filter_sql}
+    #         GROUP BY partner, keyword_block_id
+    #     )
+    #     """
+
+    #     partner_share_join = """
+    #     LEFT JOIN partner_block_revenue_share p
+    #       ON s.partner = p.partner
+    #      AND s.keyword_block_id = p.keyword_block_id
+    #     """
+
+    #     partner_share_select = """
+    #     , ROUND(p.partner_revenue_share * 100, 2) AS `Partner Share`
+    #     """
 
     # --------------------------------------------------
     # 4. FINAL QUERY
@@ -111,14 +150,15 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
             row_number() over (partition by r.keyword_block_id order by r.eventDate)
             - row_number() over (partition by r.keyword_block_id, (r.epi > r.prev_epi) order by r.eventDate) else null end as grp_daily_rise,
 
-            
+            case when r.epi < r.epi_7d_avg * 0.8 then
             ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id ORDER BY r.eventDate)
-              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epi < r.epi_7d_avg * 0.8) ORDER BY r.eventDate) AS 
-              grp_low,
+              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epi < r.epi_7d_avg * 0.8) ORDER BY r.eventDate)
+            else null end AS grp_low,
 
+            case when r.epi > r.epi_7d_avg * 1.15 then
             ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id ORDER BY r.eventDate)
-              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epi > r.epi_7d_avg * 1.15) ORDER BY r.eventDate) AS 
-              grp_high,
+              - ROW_NUMBER() OVER (PARTITION BY r.keyword_block_id, (r.epi > r.epi_7d_avg * 1.15) ORDER BY r.eventDate)
+            else null end AS grp_high,
 
             -- Volume-led EPI stagnation
             CASE 
@@ -146,13 +186,25 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
                 WHEN f.mild_epi_drift_flag = 1 
                     THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_daily_drop ORDER BY f.eventDate DESC) = 1 
                         ELSE 0 
-            END AS is_current_drop_streak_end,
+                END AS is_current_drop_streak_end,
         
-        CASE 
-            WHEN f.mild_epi_rise_flag = 1 
-                THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_daily_rise ORDER BY f.eventDate DESC) = 1 
+            CASE 
+                WHEN f.mild_epi_rise_flag = 1 
+                    THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_daily_rise ORDER BY f.eventDate DESC) = 1 
+                        ELSE 0 
+            END AS is_current_rise_streak_end,
+    
+            CASE 
+                    WHEN f.low_epi_flag = 1 
+                        THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_low ORDER BY f.eventDate DESC) = 1 
+                        ELSE 0 
+                END AS is_current_low_streak_end,            
+            
+            CASE 
+                WHEN f.high_epi_flag = 1 
+                    THEN ROW_NUMBER() OVER (PARTITION BY f.keyword_block_id, f.grp_high ORDER BY f.eventDate DESC) = 1 
                     ELSE 0 
-        END AS is_current_rise_streak_end,
+            END AS is_current_high_streak_end,
 
         ROUND(((f.epi - f.epi_7d_avg) / NULLIF(f.epi_7d_avg, 0)) * 100, 1) AS epi_perf_pct,
         
@@ -191,20 +243,26 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
             
             round(g.daily_rev_share * 100, 2) as `Block's Daily Share`,
 
+            round(impr_7d_avg, 2) as `7D Avg Impressions`,
+
             CASE
                 -- 1) CRITICAL RED (streak / sharp drops)
-                WHEN s.low_streak_len >= 3 AND g.daily_rev_share > 0.015 THEN '🔥 3D EPI Decline in High Revenue Block'
-                WHEN s.low_streak_len >= 3 THEN '⚠️ 3D EPI Decline Streak'
-                WHEN s.sharp_drop_flag = 1 AND g.daily_rev_share > 0.015 THEN '🚨 Sharp EPI Drop on High Revenue Block'
+                WHEN s.low_streak_len >= 3 AND g.daily_rev_share > 0.015 and s.is_current_low_streak_end = 1 THEN CONCAT('🔥 EPI ↓ ', s.low_streak_len, 'D Streak | ', s.epi_perf_pct, '% vs 7D Avg | High Rev Block')
+                
+                WHEN s.low_streak_len >= 3 and s.is_current_low_streak_end = 1 then CONCAT('⚠️ EPI ↓ ', s.low_streak_len, 'D Streak | ', s.epi_perf_pct, '% vs 7D Avg')
+                
+                WHEN s.sharp_drop_flag = 1 AND g.daily_rev_share > 0.015 THEN CONCAT('🚨 Sharp EPI ↓ ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '% vs Yesterday | High Rev Block')
+                
                 WHEN s.sharp_drop_flag = 1 THEN
-                CONCAT('⚠️ Sharp EPI Drop From Yesterday by ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '%')
+                CONCAT('🚨 Sharp EPI ↓ ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '% vs Yesterday')
 
+                
                 -- 2) CRITICAL GREEN (streak / sharp rises)
-                WHEN s.high_streak_len >= 3 AND g.daily_rev_share > 0.015 THEN '✅ 3D EPI Rise in High Revenue Block'
-                WHEN s.high_streak_len >= 3 THEN '📈 3D EPI Rise Streak'
-                WHEN s.sharp_rise_flag = 1 AND g.daily_rev_share > 0.015 THEN '🏆 Sharp EPI Rise on High Revenue Block'
+                WHEN s.high_streak_len >= 3 AND g.daily_rev_share > 0.015 and s.is_current_low_streak_end = 1 THEN CONCAT('🔥 EPI ↑ ', s.high_streak_len, 'D Streak | ', s.epi_perf_pct, '% vs 7D Avg | High Rev Block')
+                WHEN s.high_streak_len >= 3 and s.is_current_low_streak_end = 1 THEN CONCAT('📈 EPI ↑ ', s.low_streak_len, 'D Streak | ', s.epi_perf_pct, '% vs 7D Avg')
+                WHEN s.sharp_rise_flag = 1 AND g.daily_rev_share > 0.015 THEN CONCAT('🏆 Sharp EPI ↑ ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '% vs Yesterday | High Rev Block')
                 WHEN s.sharp_rise_flag = 1 THEN
-                CONCAT('✨ Sharp EPI Rise From Yesterday by ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '%')
+                CONCAT('✨ Sharp EPI ↑ ', ROUND(((s.epi - s.prev_epi) / NULLIF(s.prev_epi, 0)) * 100, 2), '% vs Yesterday')
 
                 -- 3) DAILY MOVERS
 
@@ -215,17 +273,18 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
                     THEN concat('🏆 EPI Rising Daily For ', s.mild_rise_streak_len, ' Days')
 
                 -- 4) SINGLE-DAY diagnostics
-                WHEN s.low_epi_low_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '❌ Both EPI & Rev Low on High Revenue Block'
+                WHEN s.low_epi_low_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '❌ Both EPI & Rev Low | High Rev Block'
                 WHEN s.low_epi_high_rev_flag = 1 THEN CONCAT('⚠️ EPI: ', s.epi_perf_pct, '% | Rev: ', s.rev_perf_pct, '%')
 
-                WHEN s.high_epi_high_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '✅ EPI & Revenue Both High on High Revenue Block'
+                WHEN s.high_epi_high_rev_flag = 1 AND g.daily_rev_share > 0.015 THEN '✅ EPI & Revenue Both High | High Rev Block'
                 WHEN s.high_epi_low_rev_flag = 1 then CONCAT('✨ EPI: ', s.epi_perf_pct, '% | Rev: ', s.rev_perf_pct, '%')
                 WHEN s.high_epi_high_rev_flag = 1 THEN '✅ EPI & Revenue Both Higher Than 7D Avg'
 
                 WHEN s.low_epi_flag = 1 AND g.daily_rev_share > 0.015 THEN '🔎 Low EPI - High Revenue Block'
                 WHEN s.high_epi_flag = 1 AND g.daily_rev_share > 0.015 THEN '🔎 High EPI - High Revenue Block'
-                WHEN s.low_epi_flag = 1 THEN CONCAT('⚠️ EPI DOWN (', ROUND(((s.epi - s.epi_7d_avg) / NULLIF(s.epi_7d_avg, 0)) * 100, 2), '%)')
-                WHEN s.high_epi_flag = 1 THEN CONCAT('📈 EPI UP (', ROUND(((s.epi - s.epi_7d_avg) / NULLIF(s.epi_7d_avg, 0)) * 100, 2), '%)')
+                
+                WHEN s.low_epi_flag = 1 THEN CONCAT('⚠️ EPI DOWN | ', s.epi_perf_pct, '% vs 7D Avg')
+                WHEN s.high_epi_flag = 1 THEN CONCAT('📈 EPI UP | ', s.epi_perf_pct, '% vs 7D Avg')
 
                 -- 🟡 SCALE QUALITY WATCH
             	WHEN s.volume_epi_stagnation_flag = 1 AND g.daily_rev_share > 0.01 THEN '📈 Traffic & Revenue Spike with Stable EPI on High Revenue Block'
@@ -247,7 +306,7 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
     )
 
     SELECT 
-        Date, `Block ID`,
+        Date, Alerts, `Block ID`,
     	Partner,
     	`Block Name`,
     	Earnings,
@@ -257,7 +316,9 @@ def fetch_epi_tracker(partners=None, block_ids=None, block_names=None):
     	EPI, 
         `7D Avg EPI`, `30D Avg EPI`,
         `Block's Daily Share`,
-        Alerts,
+        
+
+        `7D Avg Impressions`,
 
         is_high_revenue_block,
         
