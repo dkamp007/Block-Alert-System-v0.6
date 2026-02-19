@@ -35,8 +35,7 @@ SMTP_HOST = "mail.dinerosoftware.com"
 SMTP_PORT = 25
 USERNAME = "smtpcheck@dinerosoftware.com"
 PASSWORD = "SMTP801l0g1n"
-#RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
-RECEIVER_EMAILS = ['debkamal.paul@dinerosoftware.com']
+RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 context.set_ciphers("DEFAULT@SECLEVEL=1")
@@ -130,10 +129,12 @@ def was_no_data_email_sent(alert_date):
 
 
 def log_email_alert(alert_date, red_df, green_df, partner_df, email_type, csv_paths):
+    
+    csv_paths = csv_paths if csv_paths is not None else []
     red_csv = None
     green_csv= None
     partner_csv = None
-
+    
     for p in csv_paths:
         name = os.path.basename(p)
         if "RED_ALERTS" in name:
@@ -142,12 +143,12 @@ def log_email_alert(alert_date, red_df, green_df, partner_df, email_type, csv_pa
             green_csv = name
         elif "Partner_Spikes" in name:
             partner_csv = name
-
-    red_count = len(red_df)
-    green_count = len(green_df)
-    partner_count = len(partner_df)
-    csv_files_count = len(csv_paths)
-
+    
+    red_count = len(red_df) if red_df is not None else "NULL"
+    green_count = len(green_df) if green_df is not None else "NULL"
+    partner_count = len(partner_df) if partner_df is not None else "NULL"
+    csv_files_count = len(csv_paths) if email_type != "no_data_email" else "NULL"
+    
     query = f"""
         INSERT INTO email_alerts_log
         (alert_date, email_type, red_alert_count, green_alert_count, partner_alert_count, csv_files_count,
@@ -159,16 +160,17 @@ def log_email_alert(alert_date, red_df, green_df, partner_df, email_type, csv_pa
          {f"'{partner_csv}'" if partner_csv else "NULL"},
          CONVERT_TZ(NOW(), 'UTC', 'US/Pacific')
          )
-        # ON DUPLICATE KEY UPDATE
-        #     red_alert_count = {red_count},
-        #     green_alert_count = {green_count},
-        #     partner_alert_count = {partner_count},
-        #     csv_files_count = {csv_files_count},
-        #     red_alert_csv = {f"'{red_csv}'" if red_csv else "NULL"},
-        #     green_alert_csv = {f"'{green_csv}'" if green_csv else "NULL"},
-        #     partner_spike_csv = {f"'{partner_csv}'" if partner_csv else "NULL"},
-        #     sent_at = CONVERT_TZ(NOW(), 'UTC', 'US/Pacific');
+        ON DUPLICATE KEY UPDATE
+            red_alert_count = {red_count},
+            green_alert_count = {green_count},
+            partner_alert_count = {partner_count},
+            csv_files_count = {csv_files_count},
+            red_alert_csv = {f"'{red_csv}'" if red_csv else "NULL"},
+            green_alert_csv = {f"'{green_csv}'" if green_csv else "NULL"},
+            partner_spike_csv = {f"'{partner_csv}'" if partner_csv else "NULL"},
+            sent_at = CONVERT_TZ(NOW(), 'UTC', 'US/Pacific');
     """
+    
     run_query(query)
 
 
@@ -804,14 +806,6 @@ def fetch_volume_spike_tracker(alert_date):
 def get_alerts(alert_date):
     
     print("🔄 Running dashboard trackers...")
-
-    # alert_date = get_next_alert_date()
-
-    # if not is_data_available_for_date(alert_date):
-    #     print("⏸ No new complete data day yet.")
-    #     return None, None, None, None, None, alert_date
-
-    #return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), None
     
     print(f"📤 Preparing alerts for {alert_date}")
     
@@ -1015,32 +1009,65 @@ def main():
 
         print("📧 Sending NO DATA email...")
     
-        subject = f"KPI Alerts – No Data Available ({alert_date})"
-    
+        subject = f"KPI Alerts – Data Pending for {alert_date}"
+
+        pst_timezone = pytz.timezone('US/Pacific')
+        pst_now = datetime.now(pst_timezone)
+
         body = f"""
             <html>
                 <head>
                     <style>
                         body {{
                             font-family: Arial, sans-serif;
+                            color: #333;
+                        }}
+                        .container {{
+                            padding: 20px;
+                            max-width: 600px;
+                        }}
+                        .notice {{
+                            padding: 12px 16px;
+                            background-color: #fff8e1;
+                            border-left: 5px solid #f9a825;
+                            margin: 20px 0;
+                        }}
+                        .footer {{
+                            margin-top: 25px;
+                            font-size: 12px;
+                            color: #777;
                         }}
                     </style>
                 </head>
                 <body>
-                    <p>Hello Team,</p>
-            
-                    <p>The KPI alert system executed successfully for <b>{alert_date}</b>.</p>
-            
-                    <p>
-                    However, complete data is not yet available in the system.
-                    </p>
-            
-                    <p>
-                    Alerts will be sent automatically once data becomes available.
-                    </p>
-            
-                    <br>
-                    <p>Regards,<br>KPI Alert System</p>
+                    <div class="container">
+                        <p>Hello Team,</p>
+        
+                        <div class="notice">
+                            <strong>Data Pending:</strong> Stats for <strong>{alert_date}</strong> are not yet available in the system.
+                        </div>
+        
+                        <p>
+                            The KPI alert system ran successfully on schedule but found no data for <strong>{alert_date}</strong>. This is typically due to a delay in data ingestion.
+                        </p>
+        
+                        <p>
+                            No action is required — once data becomes available, the alert email for <strong>{alert_date}</strong> will be sent out automatically.
+                        </p>
+        
+                        <p>
+                            Access the live dashboard here:<br>
+                            <a href="https://keywordtool.simpleadmin.io/Block_Alert_System">KPI Alert Console</a>
+                        </p>
+
+                        <p>
+                            Thank you for your patience.
+                        </p>
+        
+                        <div class="footer">
+                            Generated on {pst_now.strftime('%Y-%m-%d %H:%M:%S PST')} | KPI Alert Console
+                        </div>
+                    </div>
                 </body>
             </html>
             """
@@ -1054,13 +1081,12 @@ def main():
     
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60)
             server.ehlo()
+            print("🔐 Starting TLS handshake...")
             server.starttls(context=context)
             server.ehlo()
             server.login(USERNAME, PASSWORD)
             server.send_message(msg)
             server.quit()
-    
-            #mark_no_data_email_sent(alert_date)
     
             print("✅ No Data email sent and marked!")
 
@@ -1110,9 +1136,8 @@ def main():
             print("ℹ️ No RED alerts or GREEN alerts or Partner spikes found. Skipping CSV generation.")
         
         # STEP 4: Email subject & contents
-        #subject = f"🚨 KPI BLOCK RED ALERTS - {alert_date} ({len(red_alerts)} Alerts)"
         
-        subject = f"KPI Alerts – {alert_date}" #| {len(all_red_alerts)} Red & {len(all_green_alerts)} Green Alerts"
+        subject = f"KPI Alerts – {alert_date}"
 
         unique_red_blocks = combined_red_alerts.drop_duplicates(subset=['Block ID'])
 
@@ -1224,7 +1249,7 @@ def main():
             # Attach CSV if exists
             for file_path in attachments:
                 with open(file_path, "rb") as f:
-                    part = MIMEText(f.read().decode("utf-8"), "plain")
+                    part = MIMEText(f.read().decode("utf-8"), "csv")
                     part.add_header(
                         "Content-Disposition",
                         f'attachment; filename="{os.path.basename(file_path)}"',
