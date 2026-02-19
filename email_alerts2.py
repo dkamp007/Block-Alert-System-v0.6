@@ -35,6 +35,7 @@ SMTP_HOST = "mail.dinerosoftware.com"
 SMTP_PORT = 25
 USERNAME = "smtpcheck@dinerosoftware.com"
 PASSWORD = "SMTP801l0g1n"
+
 RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -144,7 +145,7 @@ def log_email_alert(alert_date, red_df, green_df, partner_df, email_type, csv_pa
         elif "Partner_Spikes" in name:
             partner_csv = name
     
-    red_count = len(red_df) if red_df is not None else "NULL"
+    red_count   = len(red_df) if red_df is not None else "NULL"
     green_count = len(green_df) if green_df is not None else "NULL"
     partner_count = len(partner_df) if partner_df is not None else "NULL"
     csv_files_count = len(csv_paths) if email_type != "no_data_email" else "NULL"
@@ -170,7 +171,6 @@ def log_email_alert(alert_date, red_df, green_df, partner_df, email_type, csv_pa
             partner_spike_csv = {f"'{partner_csv}'" if partner_csv else "NULL"},
             sent_at = CONVERT_TZ(NOW(), 'UTC', 'US/Pacific');
     """
-    
     run_query(query)
 
 
@@ -996,6 +996,26 @@ def main():
         return
 
     # --------------------------
+    # ⏰ TIME GATE
+    # --------------------------
+    pst_timezone = pytz.timezone('US/Pacific')
+    pst_now = datetime.now(pst_timezone)
+
+    if pst_now.hour < 10 or (pst_now.hour == 10 and pst_now.minute < 20):
+        print(f"⏰ Too early to check for data. Current PST time: {pst_now.strftime('%H:%M')}. Exiting.")
+        return
+
+    # --------------------------
+    # 📅 DATE GATE
+    # --------------------------
+    pst_today = pst_now.date()
+
+    if alert_date >= pst_today:
+        print(f"Alert_date {alert_date} is today or future. Data won't be available until tomorrow. Exiting.")
+        return
+    
+
+    # --------------------------
     # 1️⃣ NO DATA CASE
     # --------------------------
 
@@ -1081,7 +1101,6 @@ def main():
     
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60)
             server.ehlo()
-            print("🔐 Starting TLS handshake...")
             server.starttls(context=context)
             server.ehlo()
             server.login(USERNAME, PASSWORD)
