@@ -36,7 +36,8 @@ SMTP_PORT = 25
 USERNAME = "smtpcheck@dinerosoftware.com"
 PASSWORD = "SMTP801l0g1n"
 
-RECEIVER_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com", "jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com"]
+TO_EMAILS = ["ryan@tapstone.com", "suphaus@tapstone.com", "jon@tapstone.com"]
+CC_EMAILS = ["jatin@tapstone.com", "amit@tapstone.com", "monetization@tapstone.com", "datateam@dinerosoftware.com", "michelle@tapstone.com", "haley@tapstone.com"]
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 context.set_ciphers("DEFAULT@SECLEVEL=1")
@@ -1095,16 +1096,20 @@ def main():
         try:
             msg = MIMEMultipart()
             msg["From"] = USERNAME
-            msg["To"] = ", ".join(RECEIVER_EMAILS)
+            msg["To"] = ", ".join(TO_EMAILS)
+            msg["Cc"] = ", ".join(CC_EMAILS)
             msg["Subject"] = subject
             msg.attach(MIMEText(body, "html"))
+
+            all_recipients = TO_EMAILS + CC_EMAILS
     
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60)
             server.ehlo()
             server.starttls(context=context)
             server.ehlo()
             server.login(USERNAME, PASSWORD)
-            server.send_message(msg)
+            
+            server.send_message(msg, from_addr=USERNAME, to_addrs=all_recipients)
             server.quit()
     
             print("✅ No Data email sent and marked!")
@@ -1260,7 +1265,8 @@ def main():
         try:
             msg = MIMEMultipart()
             msg["From"] = USERNAME
-            msg["To"] = ", ".join(RECEIVER_EMAILS)
+            msg["To"] = ", ".join(TO_EMAILS)
+            msg["Cc"] = ", ".join(CC_EMAILS)
             msg["Subject"] = subject
             
             msg.attach(MIMEText(html_body, "html"))
@@ -1275,7 +1281,8 @@ def main():
                     )
                     msg.attach(part)
     
-
+            all_recipients = TO_EMAILS + CC_EMAILS
+            
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60)
             server.ehlo()
                 
@@ -1284,7 +1291,7 @@ def main():
             server.ehlo()
                 
             server.login(USERNAME, PASSWORD)
-            server.send_message(msg)
+            server.send_message(msg, from_addr=USERNAME, to_addrs=all_recipients)
             server.quit()
 
             try:
