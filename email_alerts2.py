@@ -1305,7 +1305,7 @@ def main():
             except Exception as e:
                 print("⚠️ Email sent BUT logging failed:", e)
     
-            print(f"✅ SUCCESS! Email sent to {len(RECEIVER_EMAILS)} execs")
+            print(f"✅ SUCCESS! Email sent to {len(all_recipients)} execs")
 
         except Exception as e:
             print(f"❌ Email failed: {str(e)}")
