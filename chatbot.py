@@ -13,7 +13,7 @@ from st_copy_to_clipboard import st_copy_to_clipboard
 # CONFIGURATION
 # --------------------------------------------------
 
-GEMINI_API_KEY = "AIzaSyC6fBz9HWOsY4DeFPjgIt0jbi8zoK1Wpf4"
+GEMINI_API_KEY = ""
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-3-flash-preview")
