@@ -10,12 +10,13 @@ from queries.block_details import (
 from queries.epc_tracker import fetch_epc_tracker
 from queries.epi_tracker import fetch_epi_tracker
 from queries.spike_tracker import fetch_volume_spike_tracker, fetch_category_spike_tracker
+from queries.chatbot import render_chatbot
 
 
 # --------------------------------------------------
 # PAGE CONFIG & STYLES
 # --------------------------------------------------
-st.set_page_config("Block System Alert Console v0.5", layout="wide", initial_sidebar_state='expanded')
+st.set_page_config("Block System Alert Console v0.6", layout="wide", initial_sidebar_state='expanded')
 
 st.markdown("""
 <style>
@@ -112,7 +113,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="dashboard-header">
-    <h1>📊 KPI Alert Console v0.5</h1>
+    <h1>📊 KPI Alert Console v0.6</h1>
     
 </div>
 <style>
@@ -234,7 +235,7 @@ with col1:
        
     view = st.radio(
         "**KPI Source**", 
-        ["EPC", "EPI", 'Impressions', 'Earnings'],
+        ["EPC", "EPI", 'Earnings'],
         index=0, #.index(st.session_state.kpi_view),
         horizontal=True, 
         key="kpi_source_radio"
@@ -276,6 +277,7 @@ def prepare_for_display(df):
 # KPI RENDERING
 # --------------------------------------------------
 
+
 kpi_df_display = apply_display_days(epc_df if view == "EPC" else epi_df, date_col="Date", days=display_days, date_range=custom_range)
 kpi_final = apply_user_filters(kpi_df_display, partners, block_names, block_ids)
 kpi_filtered = apply_alert_filter(kpi_final)
@@ -284,32 +286,31 @@ render_kpis(kpi_final, kpi_filtered, alert_view)
 
 
 
-# --------------------------------------------------
-# SYSTEM WIDE VISUALS
-# --------------------------------------------------
-#if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
-    #render_performance_corridor(st.session_state["sys_stats"], view)
+# # --------------------------------------------------
+# # SYSTEM WIDE VISUALS
+# # --------------------------------------------------
+# #if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
+#     #render_performance_corridor(st.session_state["sys_stats"], view)
 
-if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
+# if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
     
-    vis_col_left, vis_col_right = st.columns([1.9, 1.1])
+#     vis_col_left, vis_col_right = st.columns([2, 1.2])
     
-    with vis_col_left:
-        render_performance_corridor(st.session_state["sys_stats"], view)
+#     with vis_col_left:
+#         render_performance_corridor(st.session_state["sys_stats"], view)
         
-    # with vis_col_right:
-    #     scatter_metric = "EPC" if view == "EPC" else "EPI"
+#     # with vis_col_right:
+#     #     scatter_metric = "EPC" if view == "EPC" else "EPI"
 
-    #     render_impact_scatter(st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"], metric_type=scatter_metric)
+#     #     render_impact_scatter(st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"], metric_type=scatter_metric)
 
-    with vis_col_right:
-        #scatter_metric = "EPC" if view == "EPC" else "EPI"
+#     with vis_col_right:
+#         #scatter_metric = "EPC" if view == "EPC" else "EPI"
         
-        # Select the base dataframe
-        #base_df = st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"]
+#         # Select the base dataframe
+#         #base_df = st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"]
     
-        render_impact_scatter(st.session_state["volume_df"])
-
+#         render_impact_scatter(st.session_state["volume_df"])
 
 
 
@@ -331,7 +332,7 @@ if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = None
 
 
-tab1, tab2, tab3, tab4 = st.tabs(["**📋 EPC Alerts**", "**📋 EPI Alerts**", "**📈 Partner Volume Spike Tracker**", "**📈 Category Volume Spike Tracker**"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["**📋 EPC Alerts**", "**📋 EPI Alerts**", "**📈 Partner Volume Spike Tracker**", "**📈 Category Volume Spike Tracker**", "**🧠 ChatBot**"])
 
 with tab1:
     filtered_epc = prepare_for_display(epc_filtered)
@@ -351,7 +352,7 @@ with tab1:
             'alert_bucket': None,
             '30D Avg EPC': st.column_config.NumberColumn("30D Avg EPC", format="$%.4f"),
             '30D Avg Earnings': st.column_config.NumberColumn("30D Avg Earnings", format="$%.2f"),# format="$%.2f"),
-            'Alerts': st.column_config.Column('Alerts', width=340),
+            'Alerts': st.column_config.Column('Alerts', width=340),#, pinned=True),
             '7D Avg Impressions': None,
             'is_high_revenue_block': None
         })
@@ -374,7 +375,7 @@ with tab2:
             'alert_bucket': None,
             '30D Avg EPI': st.column_config.NumberColumn("30D Avg EPI", format="$%.4f"),
             '30D Avg Earnings': st.column_config.NumberColumn("30D Avg Earnings", format="$%.2f"),
-            'Alerts': st.column_config.Column('Alerts', width=340),
+            'Alerts': st.column_config.Column('Alerts', width=340), #pinned=True),
             '7D Avg Impressions': None,
             'is_high_revenue_block': None
         })
@@ -403,7 +404,7 @@ with tab3:
             'Date': st.column_config.DateColumn('Date', format='YYYY-MM-DD', pinned=True),
             'Partner': st.column_config.TextColumn('Partner', pinned=True),
             'Live Categories': st.column_config.NumberColumn('Live Categories', help=f'Categories with **impressions > 10 & earnings > 0**'),
-            'Alerts': st.column_config.Column('Alerts', width=200)
+            'Alerts': st.column_config.Column('Alerts', width=200),# pinned=True)
         }, 
         selectable=True, 
         selection_mode="single-row", 
@@ -449,7 +450,7 @@ with tab4:
             'Rev vs 7D': st.column_config.ProgressColumn("Rev vs 7D", min_value=-100, max_value=800, format="%.2f%%"),
             'Earnings': st.column_config.NumberColumn("Earnings", format='dollar'),# format="$%.2f")
             'Partner': None,
-            'Alerts': st.column_config.Column('Alerts', width=200)
+            'Alerts': st.column_config.Column('Alerts', width=200),# pinned=True)
 
         }, 
         selectable=True, 
@@ -473,6 +474,9 @@ with tab4:
                 open_category_modal(selected_row, end_date)
         
             st.write("Selected:", selected_row["Block Name"], selected_row["Date"])
+
+with tab5:
+    render_chatbot()
 
 # --------------------------------------------------
 # DEEP DIVE SECTION
@@ -505,3 +509,30 @@ if not all_flagged_blocks.empty:
                 render_deep_dive(hist_df, target_block_name)
             with col2:
                 render_deep_dive_traffic(hist_df, target_block_name)
+
+
+# --------------------------------------------------
+# SYSTEM WIDE VISUALS
+# --------------------------------------------------
+#if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
+    #render_performance_corridor(st.session_state["sys_stats"], view)
+
+if st.session_state.get("tracker_ran") and "sys_stats" in st.session_state:
+    
+    vis_col_left, vis_col_right = st.columns([2, 1.2])
+    
+    with vis_col_left:
+        render_performance_corridor(st.session_state["sys_stats"], view)
+        
+    # with vis_col_right:
+    #     scatter_metric = "EPC" if view == "EPC" else "EPI"
+
+    #     render_impact_scatter(st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"], metric_type=scatter_metric)
+
+    with vis_col_right:
+        #scatter_metric = "EPC" if view == "EPC" else "EPI"
+        
+        # Select the base dataframe
+        #base_df = st.session_state["epc_df"] if scatter_metric == 'EPC' else st.session_state["epi_df"]
+    
+        render_impact_scatter(st.session_state["volume_df"])
